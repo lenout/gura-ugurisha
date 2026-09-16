@@ -38,5 +38,14 @@ input, select, textarea { border-radius: 12px; }
 .hero-art img, .detail-image, .detail-image img, .repair-visual { border-radius: 22px; }
 .hero-art::before { border-radius: 26px; }
 .small-add, .cart-btn b, .language-toggle, .success-mark { border-radius: 50%; }
+.upload-control { width: 58px; height: 58px; display: grid; place-items: center; flex: 0 0 auto; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); color: var(--blue); font-size: 1.6rem; cursor: pointer; overflow: hidden; }
+.upload-control input { display: none; }
+.image-upload { display: flex; align-items: center; gap: 16px; }
+.image-preview { width: 58px; height: 58px; object-fit: cover; border-radius: 10px; margin-left: auto; }
+.form-error { color: #b42318; font-size: .78rem; margin: 12px 0 0; }
+.footer-inner a { display: block; color: inherit; font-size: .78rem; text-decoration: none; margin: 8px 0; }
+.whatsapp-float { position: fixed; right: 24px; bottom: 24px; z-index: 20; width: 56px; height: 56px; display: grid; place-items: center; border-radius: 50%; background: #20c063; color: #fff; font-size: 1.7rem; text-decoration: none; box-shadow: 0 10px 24px #0a6b3a40; }
+.whatsapp-float:hover { background: #149447; transform: translateY(-2px); }
+@media (max-width: 680px) { .whatsapp-float { right: 18px; bottom: 18px; width: 50px; height: 50px; } }
 .condition, .status-pill, .art-tag { border-radius: 999px; }
 .cart-item img, .listing-row img { border-radius: 12px; }

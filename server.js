@@ -12,9 +12,9 @@ const adminEmail = process.env.ADMIN_EMAIL?.toLowerCase()
 const adminPassword = process.env.ADMIN_PASSWORD
 
 const seedProducts = [
-  { name: 'Galaxy S23 Ultra', category: 'Phones', price: 680000, condition: 'Like new', location: 'Kigali', seller: 'Demo seller', image: 'https://images.unsplash.com/photo-1610945265064-0e34e5519bbf?auto=format&fit=crop&w=900&q=80', description: 'A premium smartphone with a bright display, excellent camera system and all-day battery.' },
-  { name: 'MacBook Air M2', category: 'Laptops', price: 1250000, condition: 'Good', location: 'Kigali', seller: 'Demo seller', image: 'https://images.unsplash.com/photo-1541807084-5c52b6b3adef?auto=format&fit=crop&w=900&q=80', description: 'Lightweight laptop for creative work, study and everyday productivity.' },
-  { name: 'Sony WH-1000XM5', category: 'Audio', price: 310000, condition: 'New', location: 'Huye', seller: 'Demo seller', image: 'https://images.unsplash.com/photo-1546435770-a3e426bf472b?auto=format&fit=crop&w=900&q=80', description: 'Comfortable wireless headphones with rich sound and noise cancellation.' },
+  { name: 'Galaxy S23 Ultra', category: 'Phones', price: 680000, condition: 'Like new', location: 'Kigali', seller: 'Verified seller', image: 'https://images.unsplash.com/photo-1610945265064-0e34e5519bbf?auto=format&fit=crop&w=900&q=80', description: 'A premium smartphone with a bright display, excellent camera system and all-day battery.' },
+  { name: 'MacBook Air M2', category: 'Laptops', price: 1250000, condition: 'Good', location: 'Kigali', seller: 'Verified seller', image: 'https://images.unsplash.com/photo-1541807084-5c52b6b3adef?auto=format&fit=crop&w=900&q=80', description: 'Lightweight laptop for creative work, study and everyday productivity.' },
+  { name: 'Sony WH-1000XM5', category: 'Audio', price: 310000, condition: 'New', location: 'Huye', seller: 'Verified seller', image: 'https://images.unsplash.com/photo-1546435770-a3e426bf472b?auto=format&fit=crop&w=900&q=80', description: 'Comfortable wireless headphones with rich sound and noise cancellation.' },
 ]
 
 function ensureDatabase() {
@@ -31,6 +31,7 @@ async function body(request) { let raw = ''; for await (const chunk of request) 
 function auth(request, db) { const token = request.headers.authorization?.replace('Bearer ', ''); return db.users.find((user) => user.token === token) || null }
 function publicUser(user) { return { id: user.id, name: user.name, email: user.email, phone: user.phone, role: user.role || 'user' } }
 function adminOnly(user) { return user?.role === 'admin' }
+function validImage(image) { return !image || (/^data:image\/(jpeg|jpg|png|webp);base64,/.test(image) && image.length <= 5 * 1024 * 1024) }
 
 const server = createServer(async (request, response) => {
   if (request.method === 'OPTIONS') return send(response, 204, {})
@@ -93,6 +94,7 @@ const server = createServer(async (request, response) => {
       if (!user) return send(response, 401, { error: 'Authentication required.' })
       const input = await body(request)
       if (!input.name || !input.category || !input.price || !input.description) return send(response, 400, { error: 'Name, category, price, and description are required.' })
+      if (!validImage(input.image)) return send(response, 400, { error: 'Upload a JPG, PNG, or WEBP image smaller than 5 MB.' })
       const product = { ...input, id: id(), price: Number(input.price), seller: user.name, sellerId: user.id, image: input.image || '', condition: input.condition || 'Good', location: input.location || 'Kigali' }
       db.products.unshift(product); writeDb(db); return send(response, 201, { product })
     }
