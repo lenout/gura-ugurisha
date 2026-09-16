@@ -907,6 +907,7 @@ function Sell({ addListing, go, token }) {
   const submit = async (e) => {
     e.preventDefault();
     if (!form.name || !form.price || !form.description) return;
+    if (!token) { setError("Please log in or create an account before publishing a product."); return; }
     const listing = {
       ...form,
       price: Number(form.price),
@@ -914,12 +915,9 @@ function Sell({ addListing, go, token }) {
       image,
       seller: "Your profile",
     };
-    let savedListing = listing;
-    if (token) {
-      const response = await fetch("http://localhost:3001/api/products", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(listing) });
-      if (!response.ok) { const result = await response.json(); setError(result.error || "Could not publish this product."); return; }
-      savedListing = (await response.json()).product;
-    }
+    const response = await fetch("http://localhost:3001/api/products", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(listing) });
+    if (!response.ok) { const result = await response.json(); setError(result.error || "Could not publish this product."); return; }
+    const savedListing = (await response.json()).product;
     addListing(savedListing);
     setSent(true);
   };
@@ -1050,7 +1048,7 @@ function Sell({ addListing, go, token }) {
             Cancel
           </button>
           <button className="button primary" type="submit">
-            Publish listing <span>↗</span>
+            {token ? "Publish listing" : "Log in to publish"} <span>↗</span>
           </button>
         </div>
       </form>
