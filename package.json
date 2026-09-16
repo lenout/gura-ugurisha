@@ -11,13 +11,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@tailwindcss/vite": "latest",
     "@vitejs/plugin-react": "latest",
-    "vite": "latest",
+    "concurrently": "latest",
+    "nodemailer": "^10.0.10",
     "react": "latest",
     "react-dom": "latest",
     "tailwindcss": "latest",
-    "@tailwindcss/vite": "latest",
-    "concurrently": "latest"
-  },
-  "devDependencies": {}
+    "vite": "latest"
+  }
 }

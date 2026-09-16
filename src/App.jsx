@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-const products = [
+const catalogProducts = [
   {
     id: 1,
     name: "Galaxy S23 Ultra",
@@ -429,7 +429,7 @@ function Home({ go, add, open, language }) {
             </button>
           </div>
           <ProductGrid
-            products={products.slice(0, 3)}
+            products={catalogProducts.slice(0, 3)}
             add={add}
             open={open}
           />
@@ -543,8 +543,10 @@ function Shop({ query, setQuery, add, open, initialCategory, language }) {
   const [category, setCategory] = useState(initialCategory || "All");
   const [condition, setCondition] = useState("Any condition");
   const [sort, setSort] = useState("newest");
-  const products = useMemo(() => {
-    let result = products.filter(
+  const [inventory, setInventory] = useState(catalogProducts);
+  useEffect(() => { fetch("http://localhost:3001/api/products").then((response) => response.json()).then((result) => { if (result.products) setInventory(result.products); }).catch(() => {}); }, []);
+  const filteredProducts = useMemo(() => {
+    let result = inventory.filter(
       (p) =>
         `${p.name} ${p.category} ${p.location}`
           .toLowerCase()
@@ -555,7 +557,7 @@ function Shop({ query, setQuery, add, open, initialCategory, language }) {
     if (sort === "low") result.sort((a, b) => a.price - b.price);
     if (sort === "high") result.sort((a, b) => b.price - a.price);
     return result;
-  }, [query, category, condition, sort]);
+  }, [query, category, condition, sort, inventory]);
   return (
     <main className="shop-page">
       <div className="page-intro">
@@ -600,15 +602,24 @@ function Shop({ query, setQuery, add, open, initialCategory, language }) {
       </div>
       <div className="results-line">
         <span>
-          {products.length} {language === "rw" ? "ibicuruzwa" : "products"}
+          {filteredProducts.length} {language === "rw" ? "ibicuruzwa" : "products"}
         </span>
         <span className="inventory-note">Local sellers · Trusted finds</span>
       </div>
-      <ProductGrid products={products} add={add} open={open} />
+      <ProductGrid products={filteredProducts} add={add} open={open} />
     </main>
   );
 }
-function Detail({ product, add, go }) {
+function Detail({ product, add, go, token }) {
+  const [score, setScore] = useState(0);
+  const [ratingMessage, setRatingMessage] = useState("");
+  const rateProduct = async (value) => {
+    setScore(value);
+    if (!token) return setRatingMessage("Log in to rate this product.");
+    const response = await fetch(`http://localhost:3001/api/products/${product.id}/ratings`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ score: value }) });
+    const result = await response.json();
+    setRatingMessage(response.ok ? `Rated ${result.averageRating}/5 from ${result.ratingCount} rating${result.ratingCount === 1 ? "" : "s"}.` : result.error);
+  };
   return (
     <main className="detail-page">
       <button className="back-link" onClick={() => go("shop")}>
@@ -628,6 +639,7 @@ function Detail({ product, add, go }) {
           </span>
           <h1>{product.name}</h1>
           <strong className="detail-price">{money(product.price)}</strong>
+          <p className="product-rating">★ {product.rating || 0}/5 · {product.ratingCount || 0} ratings · {product.status === "sold" ? "Sold" : "Available"}</p>
           <p className="detail-description">{product.description}</p>
           <div className="specs">
             <div>
@@ -659,6 +671,7 @@ function Detail({ product, add, go }) {
           <p className="small-note">
             Email lenout175@gmail.com or message us on WhatsApp.
           </p>
+          <div className="rating-control"><span>Rate this product</span><div>{[1, 2, 3, 4, 5].map((value) => <button key={value} className={value <= score ? "selected" : ""} onClick={() => rateProduct(value)} aria-label={`Rate ${value} out of 5`}>★</button>)}</div>{ratingMessage && <small>{ratingMessage}</small>}</div>
         </div>
       </div>
     </main>
@@ -751,8 +764,10 @@ function Auth({ type, login, register, go }) {
     confirm: "",
   });
   const [error, setError] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [otp, setOtp] = useState("");
   const isLogin = type === "login";
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault();
     if (
       !form.email ||
@@ -765,7 +780,10 @@ function Auth({ type, login, register, go }) {
           : "Complete all fields and make sure passwords match.",
       );
     setError("");
-    isLogin ? login(form) : register(form);
+    if (isLogin) return login(form);
+    const result = await register(otpSent ? { ...form, otp } : form);
+    if (result?.error) return setError(result.error);
+    if (result?.needsOtp) { setOtpSent(true); if (result.developmentOtp) setError(`Verification code: ${result.developmentOtp}`); }
   };
   return (
     <main className="auth-page">
@@ -803,6 +821,12 @@ function Auth({ type, login, register, go }) {
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 placeholder="Your full name"
               />
+            </label>
+          )}
+          {!isLogin && otpSent && (
+            <label>
+              Email verification code
+              <input inputMode="numeric" value={otp} onChange={(e) => setOtp(e.target.value)} placeholder="Enter the 6-digit code" maxLength="6" required />
             </label>
           )}
           <label>
@@ -846,7 +870,7 @@ function Auth({ type, login, register, go }) {
           )}
           {error && <p className="form-error">{error}</p>}
           <button className="button primary full" type="submit">
-            {isLogin ? "Log in" : "Create account"} <span>↗</span>
+            {isLogin ? "Log in" : otpSent ? "Verify email" : "Send verification code"} <span>↗</span>
           </button>
         </form>
         <p className="switch-auth">
@@ -896,11 +920,13 @@ function Sell({ addListing, go, token }) {
       image,
       seller: "Your profile",
     };
+    let savedListing = listing;
     if (token) {
       const response = await fetch("http://localhost:3001/api/products", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(listing) });
       if (!response.ok) { const result = await response.json(); setError(result.error || "Could not publish this product."); return; }
+      savedListing = (await response.json()).product;
     }
-    addListing(listing);
+    addListing(savedListing);
     setSent(true);
   };
   if (sent)
@@ -1278,7 +1304,12 @@ function Repair({ go }) {
     </main>
   );
 }
-function Dashboard({ user, listings, go, logout }) {
+function Dashboard({ user, listings, go, logout, token, setListings }) {
+  const setProductStatus = async (item) => {
+    const status = item.status === "sold" ? "market" : "sold";
+    const response = await fetch(`http://localhost:3001/api/products/${item.id}/status`, { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ status }) });
+    if (response.ok) setListings((current) => current.map((listing) => listing.id === item.id ? { ...listing, status } : listing));
+  };
   return (
     <main className="dashboard">
       <div className="dash-head">
@@ -1307,7 +1338,7 @@ function Dashboard({ user, listings, go, logout }) {
                     {money(item.price)} · {item.location}
                   </span>
                 </div>
-                <span className="status-pill live">LIVE</span>
+                <button className={`status-pill ${item.status === "sold" ? "danger" : "live"}`} onClick={() => setProductStatus(item)}>{item.status === "sold" ? "Sold · mark available" : "Available · mark sold"}</button>
               </div>
             ))
           ) : (
@@ -1377,6 +1408,10 @@ function Admin({ token, logout }) {
     const result = await response.json();
     if (!response.ok) return setActionError(result.error || "Could not delete product.");
     setData((current) => ({ ...current, products: current.products.filter((item) => String(item.id) !== String(productId)), metrics: { ...current.metrics, products: current.metrics.products - 1 } }));
+  };
+  const updateProductStatus = async (productId, status) => {
+    const response = await fetch(`http://localhost:3001/api/products/${productId}/status`, { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ status }) });
+    if (response.ok) setData((current) => ({ ...current, products: current.products.map((item) => String(item.id) === String(productId) ? { ...item, status } : item) }));
   };
   if (error)
     return (
@@ -1499,8 +1534,8 @@ function Admin({ token, logout }) {
         <div className="dash-title"><h2>Published products</h2></div>
         {data.products.length ? data.products.map((item) => (
           <div className="listing-row" key={item.id}>
-            <div><b>{item.name}</b><span>{item.category} · {money(item.price)} · {item.seller}</span></div>
-            <button className="status-pill danger" onClick={() => deleteProduct(item.id)}>Delete</button>
+            <div><b>{item.name}</b><span>{item.category} · {money(item.price)} · {item.seller} · ★ {item.rating || 0}/5 ({item.ratingCount || 0})</span></div>
+            <div className="admin-actions"><button className={`status-pill ${item.status === "sold" ? "danger" : "live"}`} onClick={() => updateProductStatus(item.id, item.status === "sold" ? "market" : "sold")}>{item.status === "sold" ? "Sold" : "On market"}</button><button className="status-pill danger" onClick={() => deleteProduct(item.id)}>Delete</button></div>
           </div>
         )) : <p className="muted">No published products.</p>}
       </section>
@@ -1578,9 +1613,17 @@ export default function App() {
     setUser({ name: details.email.split("@")[0], email: details.email, role: "user" });
     go("dashboard");
   };
-  const register = (details) => {
-    setUser({ name: details.name, email: details.email });
-    go("dashboard");
+  const register = async (details) => {
+    try {
+      const endpoint = details.otp ? "register/verify" : "register/start";
+      const response = await fetch(`http://localhost:3001/api/auth/${endpoint}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(details) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Registration failed.");
+      if (!details.otp) return { needsOtp: true, developmentOtp: result.developmentOtp };
+      setUser(result.user); setToken(result.token); localStorage.setItem("gura-token", result.token); go("dashboard"); return { success: true };
+    } catch (requestError) {
+      return { error: requestError.message };
+    }
   };
   const logout = () => {
     setUser(null);
@@ -1613,7 +1656,7 @@ export default function App() {
       />
     );
   if (page === "detail" && selected)
-    content = <Detail product={selected} add={add} go={go} />;
+    content = <Detail product={selected} add={add} go={go} token={token} />;
   if (page === "cart")
     content = (
       <Cart cart={cart} updateQty={updateQty} remove={remove} go={go} />
@@ -1632,7 +1675,7 @@ export default function App() {
     );
   if (page === "dashboard")
     content = user ? (
-      <Dashboard user={user} listings={listings} go={go} logout={logout} />
+      <Dashboard user={user} listings={listings} go={go} logout={logout} token={token} setListings={setListings} />
     ) : (
       <Auth type="login" login={login} register={register} go={go} />
     );

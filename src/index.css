@@ -52,4 +52,9 @@ input, select, textarea { border-radius: 12px; }
 .admin-actions { display: flex; gap: 8px; align-items: center; }
 .status-pill { padding: 7px 11px; font-size: .65rem; cursor: pointer; }
 .status-pill.danger { color: #b42318; background: #fff0ee; }
+.product-rating { color: var(--muted); font-size: .78rem; }
+.rating-control { border-top: 1px solid var(--line); margin-top: 22px; padding-top: 18px; display: grid; gap: 8px; color: var(--muted); font-size: .78rem; }
+.rating-control button { background: none; color: #c8ced0; font-size: 1.3rem; padding: 0 3px; }
+.rating-control button.selected, .rating-control button:hover { color: #e8a72c; }
+.rating-control small { color: var(--blue); }
 .cart-item img, .listing-row img { border-radius: 12px; }
