@@ -23,13 +23,13 @@ function ensureDatabase() {
 }
 function readDb() { ensureDatabase(); return JSON.parse(readFileSync(dataFile, 'utf8')) }
 function writeDb(db) { writeFileSync(dataFile, JSON.stringify(db, null, 2)) }
-function send(response, status, body) { response.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type, Authorization', 'Access-Control-Allow-Methods': 'GET, POST, PATCH, OPTIONS' }); response.end(JSON.stringify(body)) }
+function send(response, status, body) { response.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type, Authorization', 'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS' }); response.end(JSON.stringify(body)) }
 function id() { return `${Date.now()}-${randomBytes(4).toString('hex')}` }
 function hashPassword(password, salt = randomBytes(16).toString('hex')) { return `${salt}:${scryptSync(password, salt, 64).toString('hex')}` }
 function passwordMatches(password, stored) { const [salt, hash] = stored.split(':'); const actual = scryptSync(password, salt, 64); return timingSafeEqual(actual, Buffer.from(hash, 'hex')) }
 async function body(request) { let raw = ''; for await (const chunk of request) raw += chunk; return raw ? JSON.parse(raw) : {} }
 function auth(request, db) { const token = request.headers.authorization?.replace('Bearer ', ''); return db.users.find((user) => user.token === token) || null }
-function publicUser(user) { return { id: user.id, name: user.name, email: user.email, phone: user.phone, role: user.role || 'user' } }
+function publicUser(user) { return { id: user.id, name: user.name, email: user.email, phone: user.phone, role: user.role || 'user', trustStatus: user.trustStatus || 'unreviewed' } }
 function adminOnly(user) { return user?.role === 'admin' }
 function validImage(image) { return !image || (/^data:image\/(jpeg|jpg|png|webp);base64,/.test(image) && image.length <= 5 * 1024 * 1024) }
 
@@ -86,8 +86,31 @@ const server = createServer(async (request, response) => {
         metrics: { users: db.users.filter((candidate) => candidate.role !== 'admin').length, products: db.products.length, orders: db.orders.length, repairs: db.repairs.length, pageViews7d: pageViews.length, activeSessions7d: new Set(recentEvents.map((event) => event.sessionId).filter(Boolean)).size },
         popularPages: Object.entries(pages).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([page, views]) => ({ page, views })),
         recentUsers: db.users.filter((candidate) => candidate.role !== 'admin').slice(-8).reverse().map(publicUser),
+        products: db.products.map((product) => ({ id: product.id, name: product.name, seller: product.seller, price: product.price, category: product.category })),
         recentOrders: db.orders.slice(-8).reverse().map((order) => ({ id: order.id, status: order.status, location: order.location, createdAt: order.createdAt })),
       })
+    }
+    if (request.method === 'DELETE' && url.pathname.startsWith('/api/admin/products/')) {
+      if (!adminOnly(user)) return send(response, user ? 403 : 401, { error: 'Administrator access required.' })
+      const productId = url.pathname.split('/').pop()
+      const productIndex = db.products.findIndex((product) => String(product.id) === productId)
+      if (productIndex === -1) return send(response, 404, { error: 'Product not found.' })
+      const [product] = db.products.splice(productIndex, 1)
+      writeDb(db)
+      return send(response, 200, { deleted: product.id })
+    }
+    if (request.method === 'PATCH' && url.pathname.startsWith('/api/admin/users/')) {
+      if (!adminOnly(user)) return send(response, user ? 403 : 401, { error: 'Administrator access required.' })
+      const targetId = url.pathname.split('/').pop()
+      const target = db.users.find((candidate) => String(candidate.id) === targetId && candidate.role !== 'admin')
+      const input = await body(request)
+      if (!target) return send(response, 404, { error: 'User not found.' })
+      if (!['legit', 'scam', 'unreviewed'].includes(input.trustStatus)) return send(response, 400, { error: 'Trust status must be legit, scam, or unreviewed.' })
+      target.trustStatus = input.trustStatus
+      target.reviewedAt = new Date().toISOString()
+      target.reviewedBy = user.id
+      writeDb(db)
+      return send(response, 200, { user: publicUser(target) })
     }
     if (request.method === 'GET' && url.pathname === '/api/me') return user ? send(response, 200, { user: publicUser(user) }) : send(response, 401, { error: 'Authentication required.' })
     if (request.method === 'POST' && url.pathname === '/api/products') {

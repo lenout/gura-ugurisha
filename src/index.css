@@ -48,4 +48,8 @@ input, select, textarea { border-radius: 12px; }
 .whatsapp-float:hover { background: #149447; transform: translateY(-2px); }
 @media (max-width: 680px) { .whatsapp-float { right: 18px; bottom: 18px; width: 50px; height: 50px; } }
 .condition, .status-pill, .art-tag { border-radius: 999px; }
+.dashboard-section { max-width: 1100px; margin: 40px auto 0; padding: 28px; background: #fff; border-radius: 16px; }
+.admin-actions { display: flex; gap: 8px; align-items: center; }
+.status-pill { padding: 7px 11px; font-size: .65rem; cursor: pointer; }
+.status-pill.danger { color: #b42318; background: #fff0ee; }
 .cart-item img, .listing-row img { border-radius: 12px; }

@@ -1351,6 +1351,7 @@ function Dashboard({ user, listings, go, logout }) {
 function Admin({ token, logout }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
+  const [actionError, setActionError] = useState("");
   useEffect(() => {
     fetch("http://localhost:3001/api/admin/overview", {
       headers: { Authorization: `Bearer ${token}` },
@@ -1362,6 +1363,21 @@ function Admin({ token, logout }) {
       })
       .catch((requestError) => setError(requestError.message));
   }, [token]);
+  const updateUserStatus = async (userId, trustStatus) => {
+    setActionError("");
+    const response = await fetch(`http://localhost:3001/api/admin/users/${userId}`, { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ trustStatus }) });
+    const result = await response.json();
+    if (!response.ok) return setActionError(result.error || "Could not update user status.");
+    setData((current) => ({ ...current, recentUsers: current.recentUsers.map((item) => item.id === userId ? result.user : item) }));
+  };
+  const deleteProduct = async (productId) => {
+    if (!window.confirm("Delete this published product?")) return;
+    setActionError("");
+    const response = await fetch(`http://localhost:3001/api/admin/products/${productId}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+    const result = await response.json();
+    if (!response.ok) return setActionError(result.error || "Could not delete product.");
+    setData((current) => ({ ...current, products: current.products.filter((item) => String(item.id) !== String(productId)), metrics: { ...current.metrics, products: current.metrics.products - 1 } }));
+  };
   if (error)
     return (
       <main className="dashboard">
@@ -1396,6 +1412,7 @@ function Admin({ token, logout }) {
           Log out
         </button>
       </div>
+      {actionError && <p className="form-error">{actionError}</p>}
       <div className="dashboard-grid">
         <section>
           <div className="dash-title">
@@ -1453,7 +1470,11 @@ function Admin({ token, logout }) {
             <div className="listing-row" key={item.id}>
               <div>
                 <b>{item.name}</b>
-                <span>{item.email}</span>
+                <span>{item.email} · {item.trustStatus}</span>
+              </div>
+              <div className="admin-actions">
+                <button className="status-pill live" onClick={() => updateUserStatus(item.id, "legit")}>Legit</button>
+                <button className="status-pill danger" onClick={() => updateUserStatus(item.id, "scam")}>Scam</button>
               </div>
             </div>
           ))}
@@ -1473,6 +1494,15 @@ function Admin({ token, logout }) {
             <p className="muted">No orders yet.</p>
           )}
         </div>
+      </section>
+      <section className="dashboard-section">
+        <div className="dash-title"><h2>Published products</h2></div>
+        {data.products.length ? data.products.map((item) => (
+          <div className="listing-row" key={item.id}>
+            <div><b>{item.name}</b><span>{item.category} · {money(item.price)} · {item.seller}</span></div>
+            <button className="status-pill danger" onClick={() => deleteProduct(item.id)}>Delete</button>
+          </div>
+        )) : <p className="muted">No published products.</p>}
       </section>
     </main>
   );
