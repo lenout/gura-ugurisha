@@ -758,8 +758,6 @@ function Auth({ type, login, register, go }) {
     confirm: "",
   });
   const [error, setError] = useState("");
-  const [otpSent, setOtpSent] = useState(false);
-  const [otp, setOtp] = useState("");
   const isLogin = type === "login";
   const submit = async (e) => {
     e.preventDefault();
@@ -775,9 +773,8 @@ function Auth({ type, login, register, go }) {
       );
     setError("");
     if (isLogin) return login(form);
-    const result = await register(otpSent ? { ...form, otp } : form);
-    if (result?.error) return setError(result.error);
-    if (result?.needsOtp) { setOtpSent(true); if (result.developmentOtp) setError(`Verification code: ${result.developmentOtp}`); }
+    const result = await register(form);
+    if (result?.error) setError(result.error);
   };
   return (
     <main className="auth-page">
@@ -815,12 +812,6 @@ function Auth({ type, login, register, go }) {
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 placeholder="Your full name"
               />
-            </label>
-          )}
-          {!isLogin && otpSent && (
-            <label>
-              Email verification code
-              <input inputMode="numeric" value={otp} onChange={(e) => setOtp(e.target.value)} placeholder="Enter the 6-digit code" maxLength="6" required />
             </label>
           )}
           <label>
@@ -864,7 +855,7 @@ function Auth({ type, login, register, go }) {
           )}
           {error && <p className="form-error">{error}</p>}
           <button className="button primary full" type="submit">
-            {isLogin ? "Log in" : otpSent ? "Verify email" : "Send verification code"} <span>↗</span>
+            {isLogin ? "Log in" : "Create account"} <span>↗</span>
           </button>
         </form>
         <p className="switch-auth">
@@ -1616,11 +1607,9 @@ export default function App() {
   };
   const register = async (details) => {
     try {
-      const endpoint = details.otp ? "register/verify" : "register/start";
-      const response = await fetch(`http://localhost:3001/api/auth/${endpoint}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(details) });
+      const response = await fetch("http://localhost:3001/api/auth/register", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(details) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Registration failed.");
-      if (!details.otp) return { needsOtp: true, developmentOtp: result.developmentOtp };
       setUser(result.user); setToken(result.token); localStorage.setItem("gura-token", result.token); go("dashboard"); return { success: true };
     } catch (requestError) {
       return { error: requestError.message };

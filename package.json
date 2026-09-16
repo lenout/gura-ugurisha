@@ -14,7 +14,6 @@
     "@tailwindcss/vite": "latest",
     "@vitejs/plugin-react": "latest",
     "concurrently": "latest",
-    "nodemailer": "^10.0.10",
     "react": "latest",
     "react-dom": "latest",
     "tailwindcss": "latest",

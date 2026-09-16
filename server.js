@@ -3,7 +3,6 @@ import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
-import nodemailer from 'nodemailer'
 
 const root = path.dirname(fileURLToPath(import.meta.url))
 const dataDir = path.join(root, 'data')
@@ -11,16 +10,14 @@ const dataFile = path.join(dataDir, 'db.json')
 const port = Number(process.env.PORT || 3001)
 const adminEmail = process.env.ADMIN_EMAIL?.toLowerCase()
 const adminPassword = process.env.ADMIN_PASSWORD
-const smtpTransport = process.env.SMTP_HOST ? nodemailer.createTransport({ host: process.env.SMTP_HOST, port: Number(process.env.SMTP_PORT || 587), secure: process.env.SMTP_SECURE === 'true', auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD } }) : null
-const otpFrom = process.env.OTP_FROM || process.env.SMTP_USER
 
 const seedProducts = []
 
 function ensureDatabase() {
   mkdirSync(dataDir, { recursive: true })
-  if (!existsSync(dataFile)) writeFileSync(dataFile, JSON.stringify({ users: [], products: seedProducts.map((product, index) => ({ ...product, id: index + 1, sellerId: null })), orders: [], repairs: [], events: [], otpChallenges: [] }, null, 2))
+  if (!existsSync(dataFile)) writeFileSync(dataFile, JSON.stringify({ users: [], products: seedProducts.map((product, index) => ({ ...product, id: index + 1, sellerId: null })), orders: [], repairs: [], events: [] }, null, 2))
 }
-function readDb() { ensureDatabase(); const db = JSON.parse(readFileSync(dataFile, 'utf8')); db.products = (db.products || []).map((product) => ({ ...product, status: product.status || 'market', ratings: product.ratings || [] })); db.otpChallenges = db.otpChallenges || []; return db }
+function readDb() { ensureDatabase(); const db = JSON.parse(readFileSync(dataFile, 'utf8')); db.products = (db.products || []).map((product) => ({ ...product, status: product.status || 'market', ratings: product.ratings || [] })); return db }
 function writeDb(db) { writeFileSync(dataFile, JSON.stringify(db, null, 2)) }
 function send(response, status, body) { response.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type, Authorization', 'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS' }); response.end(JSON.stringify(body)) }
 function id() { return `${Date.now()}-${randomBytes(4).toString('hex')}` }
@@ -32,7 +29,6 @@ function publicUser(user) { return { id: user.id, name: user.name, email: user.e
 function adminOnly(user) { return user?.role === 'admin' }
 function validImage(image) { return !image || (/^data:image\/(jpeg|jpg|png|webp);base64,/.test(image) && image.length <= 5 * 1024 * 1024) }
 function averageRating(product) { return product.ratings?.length ? Number((product.ratings.reduce((sum, rating) => sum + rating.score, 0) / product.ratings.length).toFixed(1)) : 0 }
-async function sendOtpEmail(email, otp) { if (!smtpTransport || !otpFrom) return false; await smtpTransport.sendMail({ from: otpFrom, to: email, subject: 'Your gura&ugurisha verification code', text: `Your verification code is ${otp}. It expires in 10 minutes.` }); return true }
 
 const server = createServer(async (request, response) => {
   if (request.method === 'OPTIONS') return send(response, 204, {})
@@ -46,27 +42,14 @@ const server = createServer(async (request, response) => {
       const products = db.products.filter((product) => product.status !== 'sold' && (!query || `${product.name} ${product.category} ${product.location}`.toLowerCase().includes(query)) && (!category || category === 'All' || product.category === category)).map((product) => ({ ...product, rating: averageRating(product), ratingCount: product.ratings.length }))
       return send(response, 200, { products })
     }
-    if (request.method === 'POST' && url.pathname === '/api/auth/register/start') {
+    if (request.method === 'POST' && url.pathname === '/api/auth/register') {
       const input = await body(request)
       const email = input.email?.toLowerCase()
       if (!input.name || !email || !input.password) return send(response, 400, { error: 'Name, email, and password are required.' })
-      if (db.users.some((candidate) => candidate.email === email) || db.otpChallenges.some((challenge) => challenge.email === email && Date.parse(challenge.expiresAt) > Date.now())) return send(response, 409, { error: 'An account or active verification already exists for that email.' })
-      const otp = String(Math.floor(100000 + Math.random() * 900000))
-      db.otpChallenges = db.otpChallenges.filter((challenge) => challenge.email !== email)
-      db.otpChallenges.push({ id: id(), email, name: input.name, phone: input.phone || '', password: hashPassword(input.password), otpHash: hashPassword(otp), expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString() })
-      try { const delivered = await sendOtpEmail(email, otp); writeDb(db); return send(response, delivered ? 202 : 202, { message: 'Verification code sent.', ...(process.env.NODE_ENV !== 'production' && !delivered ? { developmentOtp: otp } : {}) }) } catch { return send(response, 502, { error: 'Could not send the verification email.' }) }
-    }
-    if (request.method === 'POST' && url.pathname === '/api/auth/register/verify') {
-      const input = await body(request)
-      const challenge = db.otpChallenges.find((candidate) => candidate.email === input.email?.toLowerCase())
-      if (!challenge || Date.parse(challenge.expiresAt) < Date.now() || !input.otp || !passwordMatches(input.otp, challenge.otpHash)) return send(response, 400, { error: 'Invalid or expired verification code.' })
-      const user = { id: id(), name: challenge.name, email: challenge.email, phone: challenge.phone, password: challenge.password, token: id(), role: 'user', trustStatus: 'unreviewed', createdAt: new Date().toISOString() }
-      db.users.push(user); db.otpChallenges = db.otpChallenges.filter((candidate) => candidate.id !== challenge.id); writeDb(db)
+      if (db.users.some((candidate) => candidate.email === email)) return send(response, 409, { error: 'An account with that email already exists.' })
+      const user = { id: id(), name: input.name, email, phone: input.phone || '', password: hashPassword(input.password), token: id(), role: 'user', trustStatus: 'unreviewed', createdAt: new Date().toISOString() }
+      db.users.push(user); writeDb(db)
       return send(response, 201, { user: publicUser(user), token: user.token })
-    }
-    if (request.method === 'POST' && url.pathname === '/api/auth/register') {
-      const input = await body(request)
-      return send(response, 410, { error: 'Registration now requires email verification. Use /api/auth/register/start, then /api/auth/register/verify.' })
     }
     if (request.method === 'POST' && url.pathname === '/api/auth/login') {
       const input = await body(request)
