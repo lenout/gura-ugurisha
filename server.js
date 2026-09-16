@@ -14,11 +14,7 @@ const adminPassword = process.env.ADMIN_PASSWORD
 const smtpTransport = process.env.SMTP_HOST ? nodemailer.createTransport({ host: process.env.SMTP_HOST, port: Number(process.env.SMTP_PORT || 587), secure: process.env.SMTP_SECURE === 'true', auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD } }) : null
 const otpFrom = process.env.OTP_FROM || process.env.SMTP_USER
 
-const seedProducts = [
-  { name: 'Galaxy S23 Ultra', category: 'Phones', price: 680000, condition: 'Like new', location: 'Kigali', seller: 'Verified seller', image: 'https://images.unsplash.com/photo-1610945265064-0e34e5519bbf?auto=format&fit=crop&w=900&q=80', description: 'A premium smartphone with a bright display, excellent camera system and all-day battery.', status: 'market', ratings: [] },
-  { name: 'MacBook Air M2', category: 'Laptops', price: 1250000, condition: 'Good', location: 'Kigali', seller: 'Verified seller', image: 'https://images.unsplash.com/photo-1541807084-5c52b6b3adef?auto=format&fit=crop&w=900&q=80', description: 'Lightweight laptop for creative work, study and everyday productivity.', status: 'market', ratings: [] },
-  { name: 'Sony WH-1000XM5', category: 'Audio', price: 310000, condition: 'New', location: 'Huye', seller: 'Verified seller', image: 'https://images.unsplash.com/photo-1546435770-a3e426bf472b?auto=format&fit=crop&w=900&q=80', description: 'Comfortable wireless headphones with rich sound and noise cancellation.', status: 'market', ratings: [] },
-]
+const seedProducts = []
 
 function ensureDatabase() {
   mkdirSync(dataDir, { recursive: true })
@@ -85,6 +81,10 @@ const server = createServer(async (request, response) => {
       return send(response, 200, { user: publicUser(user), token: user.token })
     }
     const user = auth(request, db)
+    if (request.method === 'GET' && url.pathname === '/api/my/products') {
+      if (!user) return send(response, 401, { error: 'Authentication required.' })
+      return send(response, 200, { products: db.products.filter((product) => product.sellerId === user.id).map((product) => ({ ...product, rating: averageRating(product), ratingCount: product.ratings.length })) })
+    }
     if (request.method === 'POST' && url.pathname === '/api/analytics/events') {
       const input = await body(request)
       if (!input.event || !input.page) return send(response, 400, { error: 'Event and page are required.' })
@@ -164,6 +164,8 @@ const server = createServer(async (request, response) => {
       if (!user) return send(response, 401, { error: 'Authentication required.' })
       const input = await body(request)
       if (!Array.isArray(input.items) || !input.items.length || !input.name || !input.phone || !input.location) return send(response, 400, { error: 'Items, name, phone, and delivery location are required.' })
+      const productIds = input.items.map((item) => String(item.id))
+      if (db.products.some((product) => productIds.includes(String(product.id)) && product.status === 'sold')) return send(response, 409, { error: 'One or more products are already sold.' })
       const order = { id: id(), userId: user.id, items: input.items, name: input.name, phone: input.phone, location: input.location, status: 'pending', createdAt: new Date().toISOString() }
       db.orders.push(order); writeDb(db); return send(response, 201, { order })
     }

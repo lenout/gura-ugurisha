@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
-const catalogProducts = [
+const catalogProducts = [];
+/*
   {
     id: 1,
     name: "Galaxy S23 Ultra",
@@ -131,7 +132,7 @@ const catalogProducts = [
     description:
       "A compact Windows laptop with a clean display and comfortable keyboard.",
   },
-];
+]; */
 const categories = [
   "All",
   "Phones",
@@ -147,7 +148,6 @@ const money = (value) => `RWF ${value.toLocaleString("en-US")}`;
 const ui = {
   home: ["Home", "Ahabanza"],
   marketplace: ["Marketplace", "Isoko"],
-  repair: ["Repair desk", "Ikigo cyo gusana"],
   categories: ["Categories", "Ibyiciro"],
   sell: ["Sell a product", "Gurisha igikoresho"],
   account: ["Account", "Konti"],
@@ -201,8 +201,11 @@ function Header({
   setQuery,
   language,
   setLanguage,
+  user,
+  logout,
 }) {
   const [menu, setMenu] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   return (
     <header className="topbar">
       <div className="nav-wrap">
@@ -225,15 +228,6 @@ function Header({
             }}
           >
             {tr(language, "marketplace")}
-          </button>
-          <button
-            className={page === "repair" ? "active" : ""}
-            onClick={() => {
-              go("repair");
-              setMenu(false);
-            }}
-          >
-            {tr(language, "repair")}
           </button>
           <button
             onClick={() => {
@@ -271,10 +265,11 @@ function Header({
           >
             {language === "en" ? "RW" : "EN"}
           </button>
-          <button className="account-btn" onClick={() => go("login")}>
+          <button className={`account-btn ${accountOpen ? "active" : ""}`} onClick={() => setAccountOpen(!accountOpen)}>
             <Icon>◯</Icon>
             <span>{tr(language, "account")}</span>
           </button>
+          {accountOpen && <div className="account-menu"><b>{user?.name || "Your account"}</b>{user ? <><button onClick={() => { go(user.role === "admin" ? "admin" : "dashboard"); setAccountOpen(false); }}>Dashboard</button><button onClick={() => { logout(); setAccountOpen(false); }}>Log out</button></> : <><button onClick={() => { go("login"); setAccountOpen(false); }}>Log in</button><button onClick={() => { go("register"); setAccountOpen(false); }}>Create account</button></>}</div>}
           <button className="cart-btn" onClick={() => go("cart")}>
             <Icon>▱</Icon>
             <span>{tr(language, "cart")}</span>
@@ -307,7 +302,6 @@ function Footer({ go }) {
           <h4>Marketplace</h4>
           <button onClick={() => go("shop")}>Browse products</button>
           <button onClick={() => go("sell")}>Sell a product</button>
-          <button onClick={() => go("repair")}>Repair portal</button>
         </div>
         <div>
           <h4>Account</h4>
@@ -1063,9 +1057,19 @@ function Sell({ addListing, go, token }) {
     </main>
   );
 }
-function Checkout({ cart, go }) {
+function Checkout({ cart, go, token, clearCart }) {
   const total = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
   const [placed, setPlaced] = useState(false);
+  const [error, setError] = useState("");
+  const [form, setForm] = useState({ name: "", email: "", phone: "", location: "" });
+  const submit = async (event) => {
+    event.preventDefault();
+    if (!token) return setError("Please log in before placing an order.");
+    const response = await fetch("http://localhost:3001/api/orders", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ ...form, items: cart }) });
+    const result = await response.json();
+    if (!response.ok) return setError(result.error || "Could not place this order.");
+    clearCart(); setPlaced(true);
+  };
   if (placed)
     return (
       <main className="success-page">
@@ -1094,29 +1098,26 @@ function Checkout({ cart, go }) {
       <div className="checkout-layout">
         <form
           className="checkout-form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            setPlaced(true);
-          }}
+          onSubmit={submit}
         >
           <h2>Customer information</h2>
           <div className="form-row">
             <label>
               Full name
-              <input required placeholder="Your full name" />
+              <input required placeholder="Your full name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             </label>
             <label>
               Email address
-              <input type="email" required placeholder="you@example.com" />
+              <input type="email" required placeholder="you@example.com" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
             </label>
           </div>
           <label>
             Phone number
-            <input required placeholder="07X XXX XXX" />
+            <input required placeholder="07X XXX XXX" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
           </label>
           <label>
             Delivery / location
-            <input required placeholder="City or neighborhood" />
+            <input required placeholder="City or neighborhood" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} />
           </label>
           <div className="payment-placeholder">
             <span className="card-symbol">▣</span>
@@ -1127,6 +1128,7 @@ function Checkout({ cart, go }) {
               </p>
             </div>
           </div>
+          {error && <p className="form-error">{error}</p>}
           <button className="button primary full" type="submit">
             Place order <span>↗</span>
           </button>
@@ -1305,6 +1307,7 @@ function Repair({ go }) {
   );
 }
 function Dashboard({ user, listings, go, logout, token, setListings }) {
+  useEffect(() => { if (token) fetch("http://localhost:3001/api/my/products", { headers: { Authorization: `Bearer ${token}` } }).then((response) => response.json()).then((result) => { if (result.products) setListings(result.products); }).catch(() => {}); }, [token, setListings]);
   const setProductStatus = async (item) => {
     const status = item.status === "sold" ? "market" : "sold";
     const response = await fetch(`http://localhost:3001/api/products/${item.id}/status`, { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ status }) });
@@ -1661,8 +1664,7 @@ export default function App() {
     content = (
       <Cart cart={cart} updateQty={updateQty} remove={remove} go={go} />
     );
-  if (page === "checkout") content = <Checkout cart={cart} go={go} />;
-  if (page === "repair") content = <Repair go={go} />;
+  if (page === "checkout") content = <Checkout cart={cart} go={go} token={token} clearCart={() => setCart([])} />;
   if (page === "login" || page === "register")
     content = <Auth type={page} login={login} register={register} go={go} />;
   if (page === "sell")
@@ -1697,6 +1699,8 @@ export default function App() {
           setQuery={setQuery}
           language={language}
           setLanguage={setLanguage}
+          user={user}
+          logout={logout}
         />
       )}
       {content}
